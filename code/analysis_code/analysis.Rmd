@@ -28,42 +28,87 @@ mydata <- readRDS(data_location)
 ```{r}
 ggplot(mydata, aes(x = RunnyNose, y = BodyTemp)) + geom_point() + geom_smooth(method = lm)
 
-#linear regression model specification
+#linear regression model specification set up
 lm_mod <- linear_reg() %>% set_engine("lm")
-#estimating/training model
-lm_fit <- lm_mod %>% fit(BodyTemp ~ RunnyNose, data = mydata)
+#estimating/training linear model
+lm_fit1 <- lm_mod %>% fit(BodyTemp ~ RunnyNose, data = mydata)
 #view summary of fit
-tidy(lm_fit)
+tidy(lm_fit1)
+#save as table
+lm_fit1_table <- tidy(lm_fit1)
 ```
-Not sure if this is working the way I want it to, will look into further later. 
-
 
 # fit linear model to continuous outcome (BodyTemp) using all predictors
 ```{r}
-
+# running linear model 2
+lm_fit2 <- lm_mod %>% fit(BodyTemp ~ ., data = mydata)
+#view summary of fit
+tidy(lm_fit2)
+#save as table
+lm_fit2_table <- tidy(lm_fit2)
 ```
 
 # compare model results for main predictor (RunnyNose) vs all predictors
 ```{r}
+#display model results
+glance(lm_fit1)
+glance(lm_fit2)
 
+#use ANOVA to compare model with one predictor vs model with all predictors
+lm_comp <- anova(lm_fit1$fit, lm_fit2$fit, test = "Chisq")
+lm_comp
 ```
+
+The ANOVA test tells us that we should use the second linear model, which includes all predictors. lm_fit2 is a statistically significant model
 
 # fit logistic model to categorical outcome (Nausea) using main predictor of interest (RunnyNose)
 ```{r}
+#logistic model set up
+log_mod <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
 
+#run logistic model for RunnyNose predictor
+log_fit1 <- log_mod %>% fit(Nausea ~ RunnyNose, data = mydata)
 
 ```
 
 # fits logistic model to categorical outcome (Nausea) with all predictors of interest
 ```{r}
-
+#run logistic model with all predictors
+log_fit2 <- log_mod %>% fit(Nausea ~ ., data = mydata)
 ```
 
 # compare model results with main predictor (RunnyNose) vs all predictors
 ```{r}
+#display logistic model results
+glance(log_fit1)
+glance(log_fit2)
+
+#compare model results using ANOVA
+log_comp <- anova(log_fit1$fit, log_fit2$fit, test = "Chisq")
+log_comp
 ```
 
+This ANOVA test tells us that the more complex model, log_fit2, which uses all predictors, is a more suitable model (having a significant p-value). 
 
+#saving results
 ```{r}
+saveRDS(lm_comp, file = here("results", "LinearComp.rds"))
+saveRDS(log_comp, file = here("results", "LogisticComp.rds"))
 ```
 
+#testing out KNN
+```{r}
+install.packages("kknn") #install KNN package
+library(kknn) #load KNN package
+#set up K-nearest neighbors model fit
+knn_mod <-  nearest_neighbor() %>% 
+  set_mode("regression")
+#fit model for BodyTemp and all predictors
+knn_fit1 <- knn_mod %>% fit(BodyTemp ~ ., data = mydata)
+#view model
+knn_fit1 
+
+```
+Okay, now I have created the model but I am still working on how to intepret it's accuracy/success. We'll get back to this in a bit
