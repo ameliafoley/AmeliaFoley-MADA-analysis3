@@ -1,5 +1,6 @@
 ---
 title: "exploration"
+author: "Amelia Foley"
 output: html_document
 ---
 
@@ -7,16 +8,39 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+#Overview
+This markdown loads processed data and explores relationships among these variables:
+
+ - SwollenLymphNodes: yes/no experienced swollen lymph nodes
+ - ChestCongestion: yes/no experienced chest congestion
+ - ChillsSweats: yes/no experienced chills or sweats
+ - Fatigue: yes/no experienced fatigue
+ - Headache: yes/no experienced headache
+ - RunnyNose: yes/no experienced runny nose
+ - Nausea: yes/no experienced nausea
+ - Pharyngitis: yes/no experienced sore throat
+ - BodyTemp: numeric, body temperature (F)
+ - AbPain: yes/no experienced abdominal pain
+ - NasalCongestion: yes/no experienced nasal congestion
+
+#Main outcomes
+Main continuous outcome: BodyTemp
+Main categorical outcome: Nausea
+
 # load packages and data
 ```{r}
 library(dplyr)
 library(tidyverse)
+library(here)
+library(gtsummary) #for summary table
 
 # set data location
 data_location <- data_location <- here::here("data","processed_data","processeddata.rds")
 # load data
 data <- readRDS(data_location)
 ```
+
 
 # view summary statistics for variables of interest
 ```{r}
@@ -31,38 +55,66 @@ table1 <- table(data$Nausea)
 prop.table(table1) %>% print()
 ```
 
+Significantly more people did NOT experience nausea than did experience nausea. 
+
 # make a nicer looking summary table for our variables
 ```{r}
 table2 <- tbl_summary(data, type = all_categorical() ~ "categorical")
+#view table 
 table2
+#save table
+saveRDS(table2, file = here("results", "EDA", "summarytable.rds"))
 ```
 
 
 # plot for continuous variable (BodyTemp)
 ```{r}
-data %>% ggplot(aes(BodyTemp)) + geom_histogram(bins = 30)
+histogram <- data %>% ggplot(aes(BodyTemp)) + geom_histogram(bins = 30)
+#save table
+saveRDS(histogram, file = here("results", "EDA", "histogrambodytemp.rds"))
+#view table
+histogram
 ```
+
+Our summary statistics above tell us that the mean BodyTemp is 98.9. A median of 98.5 and the histogram above tell us that the values range up to 103, relatively high.  
 
 # plot for categorical outcome of interest
 ```{r}
-data %>% ggplot(aes(Nausea)) + geom_bar()
+nauseabarplot <- data %>% ggplot(aes(Nausea)) + geom_bar()
+#view plot
+nauseabarplot
+#save plot
+saveRDS(nauseabarplot, file = here("results", "EDA", "nauseabarplot.rds"))
 ```
 
 Next, let's look at our outcomes of interest (**BodyTemp** and **Nausea**) versus some potential predictors. A few predictors I'd like to look at are: 
+ - RunnyNose
  - Pharyngitis
  - Fatigue
  - ChillsSweats
  - SwollenLymphNodes
 
 
-# plots for outcomes vs predictors
+### plots for outcomes vs predictors
+
+##Plots for body temperature
+
+#BodyTemp and nausea
 ```{r}
+
 data %>% ggplot(aes(Nausea, BodyTemp)) + geom_boxplot()
 ```
 
-Here, we are looking to see how our outcomes of interest relate to each other. There doesn't seem to be a big difference in BodyTemp based on presecence of absence of Nausea (or vice versa). Cases with Nausea are shifted slightly updwards for BodyTemp, but only equivalent to <0.25 degrees F. 
+Here, we are looking to see how our outcomes of interest relate to each other. Cases with Nausea are shifted slightly updwards for BodyTemp, but only equivalent to <0.25 degrees F. 
 
 Let's look at some other predictors for our main outcomes. 
+
+# BodyTemp and RunnyNose
+```{r}
+data %>% ggplot(aes(RunnyNose, BodyTemp)) + geom_boxplot()
+```
+
+Body temperature appears to decrease in cases of runny nose. 
 
 # BodyTemp and fatigue
 ```{r}
@@ -71,7 +123,7 @@ data %>% ggplot(aes(Fatigue, BodyTemp)) + geom_boxplot()
 
 This figure shows that individuals experiencing fatigue had higher body temperatures than those not experiencing fatigue. 
 
-#bodytemp and swollen lymph nodes
+# Body temperature and swollen lymph nodes
 ```{r}
 data %>% ggplot(aes(SwollenLymphNodes, BodyTemp)) + geom_boxplot()
 ```
@@ -83,9 +135,11 @@ There isn't a clear difference in Body Temp for cases experiencing swollen lymph
 data %>% ggplot(aes(ChillsSweats, BodyTemp)) + geom_boxplot()
 ```
 
-This figure shows that individuals experiencing chills/sweats had higher body temperatures than those not experiencing chills/sweats. Based on these preliminary figures, my predictors of interest for BodyTemp will be **ChillsSweats** and **Fatigue**. 
+This figure shows that individuals experiencing chills/sweats had higher body temperatures than those not experiencing chills/sweats. Based on these preliminary figures, my predictors of interest for BodyTemp could be **ChillsSweats** and **Fatigue**. 
 
 Next, let's look at Nausea. The data visualization cheat sheet suggests `geom_count` for comparing two categorical variables. We'll see what that looks like. With these plots, we're looking for yes/yes cases to have the largest frequency - that would help us narrow down what might be a predictor of Nausea. 
+
+##Plots for nausea
 
 # Nausea and fatigue
 ```{r}
@@ -128,18 +182,21 @@ data %>% ggplot(aes(Nausea, ChestCongestion)) + geom_count()
 
 There are some cases of nausea and chest congestion, but at a lower frequency than cases of no/no or yes/chest congestion and no/nausea. 
 
+#Nausea and ChestCongestion
 ```{r}
-data %>% ggplot(aes(Nausea, NasalCongestion)) + geom_count()
+data %>% ggplot(aes(Nausea, ChestCongestion)) + geom_count()
 ```
 
 This figure shows us that the most frequent observations are for cases of no/nausea and yes/nasal congestion. 
 
-
+#Nausea and runny nose
 ```{r}
-data %>% ggplot(aes(Nausea, CoughYN)) + geom_count()
+data %>% ggplot(aes(Nausea, RunnyNose)) + geom_count()
 ```
 
+This figure shows the most cases of yes/runnynose and no/nausea. 
 
-Based on this exploration, I am going to examine ChillsSweats and Fatigue as predictors of BodyTemp, while I am unsure of which predictors will be suitable for cases of nausea. The figures that I looked at showed some associations, but I am unsure if they are strong enough associations for our modeling exericise, or if the associations themselves are informative enough. 
+Based on this exploration, **ChillsSweats** and **Fatigue** might be predictors of body temperature, while I am unsure of which predictors will be suitable for cases of nausea. The figures that I looked at showed some associations, but I am unsure if they are strong enough associations for our modeling exericise, or if the associations themselves are informative enough. 
 
-For now, my exploration did not lead me to do any additional cleaning, so no file needs to be saved at this point. I could potentially remove some variables to create a smaller, streamlined dataset, but I think that some symptom variables may be useful during the modeling portion (even if I don't realize it yet). I'll keep them for now. 
+For now, my exploration did not lead me to do any additional cleaning, so no additional cleaned data file needs to be saved at this point. I could potentially remove some variables to create a smaller, streamlined dataset, but I think that some symptom variables may be useful during the modeling portion (even if I don't realize it yet).
+

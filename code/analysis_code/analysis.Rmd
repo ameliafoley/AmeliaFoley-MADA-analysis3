@@ -1,5 +1,6 @@
 ---
 title: "analysis"
+author: "Amelia Foley"
 output: html_document
 ---
 
@@ -14,7 +15,7 @@ library(ggplot2) #for plotting
 library(broom) #for cleaning up output from lm()
 library(here) #for data loading/saving
 library(tidymodels) #for modeling
-library(dotwhisker) #visualizing regression results
+
 
 #path to data
 #note the use of the here() package and not absolute paths
@@ -26,7 +27,8 @@ mydata <- readRDS(data_location)
 
 # fit linear model to contiuous outcome (BodyTemp) - only main predictor (RunnyNose)
 ```{r}
-ggplot(mydata, aes(x = RunnyNose, y = BodyTemp)) + geom_point() + geom_smooth(method = lm)
+#attempting to visualize data
+ggplot(mydata, aes(x = BodyTemp, y = RunnyNose)) + geom_point() + geom_smooth(method = lm)
 
 #linear regression model specification set up
 lm_mod <- linear_reg() %>% set_engine("lm")
@@ -98,9 +100,8 @@ saveRDS(lm_comp, file = here("results", "LinearComp.rds"))
 saveRDS(log_comp, file = here("results", "LogisticComp.rds"))
 ```
 
-#testing out KNN
+#testing out K-nearest neighbors model fit
 ```{r}
-install.packages("kknn") #install KNN package
 library(kknn) #load KNN package
 #set up K-nearest neighbors model fit
 knn_mod <-  nearest_neighbor() %>% 
@@ -110,5 +111,10 @@ knn_fit1 <- knn_mod %>% fit(BodyTemp ~ ., data = mydata)
 #view model
 knn_fit1 
 
+#predicting BodyTemp values based on K nearest neighbors model
+predict(knn_fit1, new_data = mydata)
 ```
-Okay, now I have created the model but I am still working on how to intepret it's accuracy/success. We'll get back to this in a bit
+Okay, now I have created the model and some predictions. I am not 100% confident in interpreting/evaluating this type of model, but it is neat to see how easily we can switch models in R. 
+
+
+
