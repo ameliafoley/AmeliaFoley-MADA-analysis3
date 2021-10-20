@@ -1,0 +1,125 @@
+---
+title: "model_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load packages and data
+```{r}
+library(ggplot2) #for plotting
+library(broom) #for cleaning up output from lm()
+library(here) #for data loading/saving
+library(tidymodels) #for modeling
+
+#path to data
+#note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed_data","processeddata.rds")
+
+#load cleaned data. 
+mydata <- readRDS(data_location)
+```
+
+# split data into train and test subsets
+```{r}
+# set seed for reproducible analysis (instead of random subset each time)
+set.seed(222)
+#subset 3/4 of data as training set
+data_split <- initial_split(mydata, prop = 3/4)
+
+#save sets as data frames
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+# recipe to fit categorical outcome to all predictors
+```{r}
+# categorical outcome: Nausea
+
+#recipe for categorical outcome with all predictors
+nausea_rec <- 
+  recipe(Nausea ~ ., data = train_data)
+
+#logistic model set up
+log_mod <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+#workflow set up
+nausea_wflow <- 
+  workflow() %>% add_model(log_mod) %>% add_recipe(nausea_rec)
+
+#use workflow to prepare recipe and train model with predictors
+nausea_fit <- 
+  nausea_wflow %>% fit(data = train_data)
+
+#extract model coefficient
+nausea_fit %>% extract_fit_parsnip() %>% tidy()
+```
+
+# evaluate model
+```{r}
+#look at ROC and ROC-AUC (performance metric for categorical outcomes)
+#used trained workflow to predict using test data
+predict(nausea_fit, test_data)
+
+#include probabilities
+nausea_aug <- augment(nausea_fit, test_data)
+
+#generate ROC curve
+nausea_aug %>%
+  roc_curve(truth = Nausea, .pred_No) %>% autoplot()
+
+#estimate area under the curve
+nausea_aug %>% roc_auc(truth = Nausea, .pred_No)
+
+```
+
+We have an ROC-AUC of 0.724, indicating that the model could be useful! And, the ROC looks similar to the Tidymodels tutorial
+
+# fit alternative model using only main predictor
+```{r}
+#categorical outcome: Nausea
+#main predictor: RunnyNose
+
+#recipe for categorical outcome with Runny Nose predictor
+runnynose_rec <- 
+  recipe(Nausea ~ RunnyNose, data = train_data)
+
+#logistic model set up
+log_mod <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+#workflow set up
+runnynose_wflow <- 
+  workflow() %>% add_model(log_mod) %>% add_recipe(runnynose_rec)
+
+#use workflow to prepare recipe and train model with predictors
+runnynose_fit <- 
+  runnynose_wflow %>% fit(data = train_data)
+
+#extract model coefficient
+runnynose_fit %>% extract_fit_parsnip() %>% tidy()
+```
+
+# evaluate alternative model with only main predictor
+```{r}
+#look at ROC and ROC-AUC (performance metric for categorical outcomes)
+#used trained workflow to predict using test data
+predict(runnynose_fit, test_data)
+
+#include probabilities
+runnynose_aug <- augment(runnynose_fit, test_data)
+
+#generate ROC curve
+runnynose_aug %>%
+  roc_curve(truth = Nausea, .pred_No) %>% autoplot()
+
+#estimate area under the curve
+runnynose_aug %>% roc_auc(truth = Nausea, .pred_No)
+```
+
+For the alternative model, we have an ROC-AUC of 0.465, which tells us this model is no good for predictions
