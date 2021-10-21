@@ -123,3 +123,120 @@ runnynose_aug %>% roc_auc(truth = Nausea, .pred_No)
 ```
 
 For the alternative model, we have an ROC-AUC of 0.465, which tells us this model is no good for predictions
+
+
+
+\newpage
+# Part 2: 
+## recipe to fit continious outcome to all predictors
+```{r}
+# continuous outcome: BodyTemp
+
+#recipe for continuous outcome with all predictors
+BT_rec <- recipe(BodyTemp ~ ., data = train_data)
+
+#linear model set up
+lm_model <- linear_reg() %>% 
+            set_engine('lm') %>% 
+            set_mode('regression')
+
+#workflow set up
+BT_wflow <- 
+  workflow() %>% add_model(lm_model) %>% add_recipe(BT_rec)
+
+#use workflow to prepare recipe and train model with predictors
+BT_fit <- 
+  BT_wflow %>% fit(data = train_data)
+
+#extract model coefficient
+BT_fit %>% extract_fit_parsnip() %>% tidy()
+```
+
+# evaluate model
+```{r}
+#look at RMSE (performance metric for continuous outcomes)
+#used trained workflow to predict using test data
+predict(BT_fit, test_data)
+
+#include probabilities
+BT_aug <- augment(BT_fit, test_data)
+
+#generate RMSE, setting the "truth" and .pred values
+BT_aug %>%
+  rmse(truth = BodyTemp, .pred)
+
+# Plotting results
+ggplot(BT_aug, aes(x = BodyTemp, y = .pred)) + 
+  # Create a diagonal line:
+  geom_abline(lty = 2) + 
+  geom_point(alpha = 0.5) + 
+  labs(y = "Predicted Body Temp (f)", x = "Body Temp (f)") +
+  # Scale and size the x- and y-axis uniformly:
+  coord_obs_pred()
+
+# r-squared is another good metric
+metrics <- metric_set(rmse, rsq, mae)
+metrics(BT_aug, truth = BodyTemp, estimate = .pred)
+
+```
+
+We have an RMSE of 1.148515. Not too bad, the lower the better for RMSE. 
+Not too surprised about the distribution of body temp, considering a majority of participants had normal body temps (around 98 degrees)
+r-squared is 0.0468187	
+
+# fit alternative model using only main predictor
+```{r}
+#continuous outcome: BodyTemp
+#main predictor: RunnyNose
+
+#recipe for continuous outcome with all predictors
+BT_rec2 <- recipe(BodyTemp ~ RunnyNose, data = train_data)
+
+#linear model set up
+lm_model2 <- linear_reg() %>% 
+            set_engine('lm') %>% 
+            set_mode('regression')
+
+#workflow set up
+BT_wflow2 <- 
+  workflow() %>% add_model(lm_model2) %>% add_recipe(BT_rec2)
+
+#use workflow to prepare recipe and train model with predictors
+BT_fit2 <- 
+  BT_wflow2 %>% fit(data = train_data)
+
+#extract model coefficient
+BT_fit2 %>% extract_fit_parsnip() %>% tidy()
+```
+
+# evaluate alternative model with only main predictor
+```{r}
+#look at RMSE (performance metric for continuous outcomes)
+#used trained workflow to predict using test data
+predict(BT_fit2, test_data)
+
+#include probabilities
+BT_aug2 <- augment(BT_fit2, test_data)
+
+#generate RMSE, setting the "truth" and .pred values
+BT_aug2 %>%
+  rmse(truth = BodyTemp, .pred)
+
+# Plotting results
+ggplot(BT_aug2, aes(x = BodyTemp, y = .pred)) + 
+  # Create a diagonal line:
+  geom_abline(lty = 2) + 
+  geom_point(alpha = 0.5) + 
+  labs(y = "Predicted Body Temp (f)", x = "Body Temp (f)") +
+  # Scale and size the x- and y-axis uniformly:
+  coord_obs_pred()
+
+# r-squared is another good metric
+metrics <- metric_set(rmse, rsq, mae)
+metrics(BT_aug2, truth = BodyTemp, estimate = .pred)
+
+```
+We have an RMSE of 1.134553. Lower than the first model. 
+Once again the distribution of body temp is looking a bit odd
+r-squared is 0.02399179	
+
