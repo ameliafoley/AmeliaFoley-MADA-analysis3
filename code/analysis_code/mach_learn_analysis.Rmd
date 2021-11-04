@@ -45,7 +45,8 @@ We want to perform 5-fold CV, 5 times repeated
 set.seed(123)
 folds <- vfold_cv(train_data, 
                   v = 5, 
-                  strata = BodyTemp)
+                  repeats = 5,
+                  strata = BodyTemp) #folds is set up to perform our CV
 
 #linear model set up
 lm_mod <- linear_reg() %>% 
@@ -53,10 +54,8 @@ lm_mod <- linear_reg() %>%
             set_mode('regression')
 
 #create recipe for data and fitting and make dummy variables
-BT_rec <- recipe(BodyTemp ~ ., data = train_data)
-#dummy coding
-dummies <- BT_rec %>% 
-  step_dummy(all_nominal())
+BT_rec <- recipe(BodyTemp ~ ., data = train_data) %>% step_dummy(all_nominal())
+
 #workflow set up
 BT_wflow <- 
   workflow() %>% add_model(lm_mod) %>% add_recipe(BT_rec)
@@ -71,31 +70,36 @@ BT_fit %>% extract_fit_parsnip() %>% tidy()
 
 # Null model performance
 ```{r}
-#compute performance of null model
-null_train <- nullmodel(y = train_data$BodyTemp)
+#recipe for null model
+null_train_rec <- recipe(BodyTemp ~ 1, data = train_data) #predicts mean of outcome
 
-#look at RMSE (performance metric for continuous outcomes)
-#used trained workflow to predict using test data
-predict(null_train, test_data)
+#null model workflow incorporating null model recipe
+null_wflow <- workflow() %>% add_model(lm_mod) %>% add_recipe(null_train_rec)
 
-#include probabilities
-null_aug <- augment(null_train, test_data)
+# I want to check and make sure that the null model worked as it was supposed to, so I want to view the predictions and make sure they are all the mean of the outcome
+#get fit for train data using null workflow
+nullfittest <- null_wflow %>% fit(data = train_data)
+#get predictions based on null model
+prediction <- predict(nullfittest, train_data)
+test_pred <- predict(nullfittest, test_data)
+#the predictions for the train and test data are all the same mean value, so this tells us the null model was set up properly
 
-#generate RMSE, setting the "truth" and .pred values
-BT_aug %>%
-  rmse(truth = BodyTemp, .pred)
+#Now, we'll use fit_resamples based on the tidymodels tutorial for CV/resampling (https://www.tidymodels.org/start/resampling/)
+#fit model with training data
+null_fit_train <- fit_resamples(null_wflow, resamples = folds)
 
-# Plotting results
-ggplot(BT_aug, aes(x = BodyTemp, y = .pred)) + 
-  # Create a diagonal line:
-  geom_abline(lty = 2) + 
-  geom_point(alpha = 0.5) + 
-  labs(y = "Predicted Body Temp (f)", x = "Body Temp (f)") +
-  # Scale and size the x- and y-axis uniformly:
-  coord_obs_pred()
+#get results
+metrics_null_train <- collect_metrics(null_fit_train)
+#RMSE for null train fit is 1.204757
 
-# r-squared is another good metric
-metrics <- metric_set(rmse, rsq, mae)
-metrics(BT_aug, truth = BodyTemp, estimate = .pred)
+#repeat for test data
+null_test_rec <- recipe(BodyTemp ~ 1, data = test_data) #predicts mean of outcome
+null_test_wflow <- workflow() %>% add_model(lm_mod) %>% add_recipe(null_test_rec) #sets workflow with new test recipe
+null_fit_test <- fit_resamples(null_test_wflow, resamples = folds) #performs fit
+metrics_null_test <- collect_metrics(null_fit_test) #gets fit metrics
+#RMSE for null test fit is 1.204757
 ```
 
+The RMSE that we get for both the null test and null train models is 1.204757. We'll use this later to compare to the performance of our real models (we want any real models to perform better than this null model). 
+
+# Model tuning and fitting
