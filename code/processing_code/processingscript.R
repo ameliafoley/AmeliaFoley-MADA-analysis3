@@ -43,11 +43,49 @@ class(cleandata8$BodyTemp)
 processeddata <- na.omit(cleandata8)
 
 #Now we have 730 observations of 32 variables, as expected. 
+
+#11/4/21 - After learning about model evaluation and machine learning, we will
+#do additional pre-processing of the data
+
+#Feature/variable removal
+#We want to remove redundant variables by removing yes/no versions of 4 variables
+processeddata <- processeddata %>% select(-"CoughYN",
+                                          -"WeaknessYN",
+                                          -"CoughYN2", 
+                                          -"MyalgiaYN")
+#code three symptom severity factors as ordinal
+#desired order: none < mild < moderate < severe
+#checking current levels
+factor(processeddata$CoughIntensity)
+factor(processeddata$Weakness)
+factor(processeddata$Myalgia)
+#currently the levels are not ordered
+
+#mutate variables to save factor order
+processeddata <- processeddata %>% mutate(CoughIntensity = ordered(processeddata$CoughIntensity, 
+                                                                   levels = c("None", "Mild", "Moderate", "Severe")),
+                                          Weakness = ordered(processeddata$Weakness, 
+                                                                   levels = c("None", "Mild", "Moderate", "Severe")), 
+                                          Myalgia = ordered(processeddata$Myalgia, 
+                                                                   levels = c("None", "Mild", "Moderate", "Severe")))
+#checking factor order
+factor(processeddata$CoughIntensity)
+factor(processeddata$Weakness)
+factor(processeddata$Myalgia)
+
+#remove low variance predictors
+#check for variance in predictors
+summary(processeddata)
+#we'll remove binary predictors with <50 entries in a given category
+#remove: Hearing, Vision
+processeddata <- processeddata %>% select(-"Hearing",
+                                          -"Vision")
+#now our processeddata dataframe has 730 observations or 26 variables. This is 
+#the data we will use for modeling. 
+
 # save data as RDS
-
-# location to save file
+# location to save file 
 save_data_location <- here::here("data","processed_data","processeddata.rds")
-
 saveRDS(processeddata, file = save_data_location)
 
 # for the rest of the analysis, our main continuous outcome of interest is 

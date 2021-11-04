@@ -1,0 +1,101 @@
+---
+title: "mach_learn_analysis"
+output: html_document
+---
+
+In this file, we will refine our analysis for this exercise and incorporate some machine learning models
+
+Outcome of interest = Body temperature (continuous, numerical)
+Corresponding model = regression
+Performance metric = RMSE
+
+# load packages and data
+```{r}
+library(ggplot2) #for plotting
+library(broom) #for cleaning up output from lm()
+library(here) #for data loading/saving
+library(tidymodels) #for modeling
+
+#path to data
+#note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed_data","processeddata.rds")
+
+#load cleaned data. 
+mydata <- readRDS(data_location)
+```
+
+# split data into train and test subsets
+```{r}
+# set seed for reproducible analysis (instead of random subset each time)
+set.seed(123)
+#subset 3/4 of data as training set
+data_split <- initial_split(mydata, 
+                            prop = 7/10, 
+                            strata = BodyTemp) #stratify by body temp for balanced outcome
+
+#save sets as data frames
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+# Cross validation
+We want to perform 5-fold CV, 5 times repeated
+```{r}
+#create folds (resample object)
+set.seed(123)
+folds <- vfold_cv(train_data, 
+                  v = 5, 
+                  strata = BodyTemp)
+
+#linear model set up
+lm_mod <- linear_reg() %>% 
+            set_engine('lm') %>% 
+            set_mode('regression')
+
+#create recipe for data and fitting and make dummy variables
+BT_rec <- recipe(BodyTemp ~ ., data = train_data)
+#dummy coding
+dummies <- BT_rec %>% 
+  step_dummy(all_nominal())
+#workflow set up
+BT_wflow <- 
+  workflow() %>% add_model(lm_mod) %>% add_recipe(BT_rec)
+
+#use workflow to prepare recipe and train model with predictors
+BT_fit <- 
+  BT_wflow %>% fit(data = train_data)
+
+#extract model coefficient
+BT_fit %>% extract_fit_parsnip() %>% tidy()
+```
+
+# Null model performance
+```{r}
+#compute performance of null model
+null_train <- nullmodel(y = train_data$BodyTemp)
+
+#look at RMSE (performance metric for continuous outcomes)
+#used trained workflow to predict using test data
+predict(null_train, test_data)
+
+#include probabilities
+null_aug <- augment(null_train, test_data)
+
+#generate RMSE, setting the "truth" and .pred values
+BT_aug %>%
+  rmse(truth = BodyTemp, .pred)
+
+# Plotting results
+ggplot(BT_aug, aes(x = BodyTemp, y = .pred)) + 
+  # Create a diagonal line:
+  geom_abline(lty = 2) + 
+  geom_point(alpha = 0.5) + 
+  labs(y = "Predicted Body Temp (f)", x = "Body Temp (f)") +
+  # Scale and size the x- and y-axis uniformly:
+  coord_obs_pred()
+
+# r-squared is another good metric
+metrics <- metric_set(rmse, rsq, mae)
+metrics(BT_aug, truth = BodyTemp, estimate = .pred)
+```
+
