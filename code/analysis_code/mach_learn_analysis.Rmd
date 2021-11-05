@@ -1,13 +1,13 @@
 ---
-title: "mach_learn_analysis"
+title: "Machine Learning Analysis"
 output: html_document
 ---
 
 In this file, we will refine our analysis for this exercise and incorporate some machine learning models
 
 Outcome of interest = Body temperature (continuous, numerical)
-Corresponding model = regression
-Performance metric = RMSE
+ - Corresponding model = regression
+ - Performance metric = RMSE
 
 # load packages and data
 ```{r}
@@ -15,6 +15,11 @@ library(ggplot2) #for plotting
 library(broom) #for cleaning up output from lm()
 library(here) #for data loading/saving
 library(tidymodels) #for modeling
+library(rpart)
+library(glmnet)
+library(ranger)
+library(rpart.plot)  # for visualizing a decision tree
+library(vip)         # for variable importance plots
 
 #path to data
 #note the use of the here() package and not absolute paths
@@ -103,3 +108,280 @@ metrics_null_test <- collect_metrics(null_fit_test) #gets fit metrics
 The RMSE that we get for both the null test and null train models is 1.204757. We'll use this later to compare to the performance of our real models (we want any real models to perform better than this null model). 
 
 # Model tuning and fitting
+Include:
+1. Model specification
+2. Workflow definition
+3. Tuning grid specification
+4. Tuning w/ cross-validation + `tune_grid()`
+## Decision tree
+```{r}
+#going based off of tidymodels tutorial: tune parameters
+#since we already split our data into test and train sets, we'll continue to use those here. they are `train_data` and `test_data`
+
+#model specification
+tune_spec <- 
+  decision_tree(
+    cost_complexity = tune(),
+    tree_depth = tune()
+  ) %>% 
+  set_engine("rpart") %>% 
+  set_mode("regression")
+tune_spec
+
+#tuning grid specification
+tree_grid <- grid_regular(cost_complexity(),
+                          tree_depth(),
+                          levels = 5)
+tree_grid
+
+#cross validation
+set.seed(123)
+cell_folds <- vfold_cv(train_data)
+
+#workflow
+set.seed(123)
+
+tree_wf <- workflow() %>%
+  add_model(tune_spec) %>%
+  add_recipe(BT_rec)
+
+#model tuning with `tune_grid()`
+tree_res <- 
+  tree_wf %>% 
+  tune_grid(
+    resamples = cell_folds,
+    grid = tree_grid
+    )
+tree_res %>% collect_metrics()
+#Here we see 25 candidate models, and the RMSE and Rsq for each
+tree_res %>% autoplot() #view plot
+
+#select the best decision tree model
+best_tree <- tree_res %>% select_best("rmse")
+best_tree #view model details
+
+#finalize model workflow with best model
+tree_final_wf <- tree_wf %>%
+  finalize_workflow(best_tree) 
+
+#fit model
+tree_fit <- 
+  tree_final_wf %>% fit(train_data)
+tree_fit
+
+```
+
+
+### Decision tree plots
+```{r}
+#diagnostics
+autoplot(tree_res)
+#calculate residuals - originally got stuck trying out lots of different methods for this. took inspiration from Zane's code to manually calculate residuals rather than using some of the built in functions that I could not get to cooperate
+tree_resid <- tree_fit %>%
+  augment(train_data) %>% #this will add predictions to our df
+  select(.pred, BodyTemp) %>%
+  mutate(.resid = BodyTemp - .pred) #manually calculate residuals
+
+#model predictions from tuned model vs actual outcomes
+tree_pred_plot <- ggplot(tree_resid, aes(x = BodyTemp, y = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Actual Outcomes: Decision Tree", x = "Body Temperature Outcome", y = "Body Temperature Prediction")
+tree_pred_plot
+
+#plot residuals vs predictions
+tree_resid_plot <- ggplot(tree_resid, aes(y = .resid, x = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Residuals: Decision Tree", x = "Body Temperature Prediction", y = "Residuals")
+tree_resid_plot #view plot
+
+#compare to null model
+metrics_null_train #view null RMSE for train data
+tree_res %>% show_best(n=1) #view RMSE for best decision tree model
+```
+I am unsure if these plots look like what they are supposed to...and what exactly this means for our model. It is odd that there are only two different predictions (two distinct horizontal lines on the pred vs bodytemp plot) even with a range of actual outcome values. It looks like as a result, we also have two distinct vertical lines for our residuals plot, since we only had two different predictions.  
+
+For the performance comparison, we see a null RMSE of 1.2 and a decision tree RMSE of 1.18. These are very similar values
+
+## LASSO model
+```{r}
+#based on tidymodels tutorial: case study
+
+#model specification
+lasso <- linear_reg(penalty = tune()) %>% set_engine("glmnet") %>% set_mode("regression")
+
+#set workflow
+lasso_wf <- workflow() %>% add_model(lasso) %>% add_recipe(BT_rec)
+
+#tuning grid specification
+lasso_grid <- tibble(penalty = 10^seq(-3, 0, length.out = 30))
+
+#tuning with CV and tune_grid
+lasso_res <- lasso_wf %>% tune_grid(resamples = cell_folds, 
+                                    grid = lasso_grid, 
+                                    control = control_grid(save_pred = TRUE), 
+                                    metrics = metric_set(rmse))
+#view model metrics
+lasso_res %>% collect_metrics()
+
+#select top models
+top_lasso <- 
+  lasso_res %>% show_best("rmse") %>% arrange(penalty)
+top_lasso #view
+
+#see best lasso
+best_lasso <- lasso_res %>% select_best()
+best_lasso #view
+
+#finalize workflow with top model
+lasso_final_wf <- lasso_wf %>% finalize_workflow(best_lasso)
+
+#fit model with finalized WF
+lasso_fit <- lasso_final_wf %>% fit(train_data)
+```
+
+### LASSO plots
+```{r}
+#diagnostics
+autoplot(lasso_res)
+#calculate residuals
+lasso_resid <- lasso_fit %>%
+  augment(train_data) %>% #this will add predictions to our df
+  select(.pred, BodyTemp) %>%
+  mutate(.resid = BodyTemp - .pred) #manually calculate residuals
+
+#model predictions from tuned model vs actual outcomes
+lasso_pred_plot <- ggplot(lasso_resid, aes(x = BodyTemp, y = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Actual Outcomes: LASSO", x = "Body Temperature Outcome", y = "Body Temperature Prediction")
+lasso_pred_plot
+
+
+#plot residuals vs predictions
+lasso_resid_plot <- ggplot(lasso_resid, aes(y = .resid, x = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Residuals: LASSO", x = "Body Temperature Prediction", y = "Residuals")
+lasso_resid_plot #view plot
+
+#compare to null model
+metrics_null_train #view null RMSE for train data
+lasso_res %>% show_best(n=1) #view RMSE for best lasso model
+```
+
+From these plots, we can tell the difference between the LASSO model and the decision tree model that we started with. There is clearly more variety in the predictions for this model, as well as for the residuals. Ultimately, we compare the RMSE for this LASSO model to the null model RMSE. The null model RMSE was 1.2, and the LASSO model RMSE is 1.14. This is a bit better of a model, but not by a whole lot. The 
+
+## Random forest
+```{r}
+#based on tidymodels tutorial: case study
+library(parallel)
+cores <- parallel::detectCores()
+cores
+#model specification
+r_forest <- rand_forest(mtry = tune(), min_n = tune(), trees = tune()) %>% set_engine("ranger", num.threads = cores) %>% set_mode("regression")
+
+#set workflow
+r_forest_wf <- workflow() %>% add_model(r_forest) %>% add_recipe(BT_rec)
+
+#tuning grid specification
+rf_grid  <- expand.grid(mtry = c(3, 4, 5, 6), min_n = c(40,50,60), trees = c(500,1000)  )
+#what we will tune:
+r_forest %>% parameters()
+
+#tuning with CV and tune_grid
+
+r_forest_res <- 
+  r_forest_wf %>%
+  tune_grid(resamples = cell_folds, 
+            grid = rf_grid, 
+            control = control_grid(save_pred = TRUE), 
+            metrics = metric_set(rmse))
+
+#view top models
+r_forest_res %>% show_best(metric = "rmse")
+
+#view plot of models performance
+autoplot(r_forest_res)
+
+#select best model
+rf_best <- r_forest_res %>% select_best(metric = "rmse")
+rf_best
+
+#finalize workflow with top model
+rf_final_wf <- r_forest_wf %>% finalize_workflow(rf_best)
+
+#fit model with finalized WF
+rf_fit <- rf_final_wf %>% fit(train_data)
+```
+
+### Random forest plots
+```{r}
+#diagnostics
+autoplot(r_forest_res)
+#calculate residuals
+rf_resid <- rf_fit %>%
+  augment(train_data) %>% #this will add predictions to our df
+  select(.pred, BodyTemp) %>%
+  mutate(.resid = BodyTemp - .pred) #manually calculate residuals
+
+#model predictions from tuned model vs actual outcomes
+rf_pred_plot <- ggplot(rf_resid, aes(x = BodyTemp, y = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Actual Outcomes: Random Forest", x = "Body Temperature Outcome", y = "Body Temperature Prediction")
+rf_pred_plot
+
+
+#plot residuals vs predictions
+rf_resid_plot <- ggplot(rf_resid, aes(y = .resid, x = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Actual Outcomes: Random Forest", x = "Body Temperature Prediction", y = "Residuals")
+rf_resid_plot #view plot
+
+#compare to null model
+metrics_null_train #view null RMSE for train data
+r_forest_res %>% show_best(n=1) #view RMSE for best decision tree model
+```
+
+Here, we see that the random forest plots for residuals and outcomes vs predictors look somewhat similar to the LASSO plots, still quite different from the decision tree plots. Remember, the RMSE for our null model for the train data was 1.2. the RMSE that we get for our best random forest model is 1.15. It seems that the random forest performs better than the null and the better than the decision tree, but not by a lot. It has a similar performance to the LASSO model.
+
+# Model selection
+```{r}
+#recall model performance metrics side by side
+metrics_null_train #view null model performance
+tree_res %>% show_best(n=1) #view RMSE for best decision tree model
+lasso_res %>% show_best(n=1) #view RMSE for best lasso tree model
+r_forest_res %>% show_best(n=1) #view RMSE for best random forest model
+```
+
+Our null model has an RMSE of 1.2 and std error of 0.017. Any model we pick should do better than that. 
+Decision tree: RMSE 1.18, std err 0.053
+LASSO: RMSE 1.14, std err 0.051
+Random forest: RMSE 1.15, std err 0.053
+
+While LASSO performs only slightly better than the random forest, it is the frontrunning model with the lowest RMSE model and lowest standard error. I will select the LASSO model as my top model for this data. 
+
+## Final model evaluation
+```{r}
+#fit to test data
+last_lasso_fit <- lasso_final_wf %>% last_fit(data_split)
+last_lasso_fit %>% collect_metrics()
+```
+
+Here we see that the RMSE for the LASSO model on the test data (using function `last_fit()`) is 1.15..., which is very close to the RMSE we saw on the train data in the LASSO model. This is a reflection of good model performance. Let's see some diagnostics for this final model. 
+
+## Final model diagnostics/plots
+```{r}
+#calculate residuals
+final_resid <- last_lasso_fit %>%
+  augment() %>% #this will add predictions to our df
+  select(.pred, BodyTemp) %>%
+  mutate(.resid = BodyTemp - .pred) #manually calculate residuals
+
+#model predictions from tuned model vs actual outcomes
+final_pred_plot <- ggplot(final_resid, aes(x = BodyTemp, y = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Actual Outcomes: LASSO", x = "Body Temperature Outcome", y = "Body Temperature Prediction")
+final_pred_plot
+
+
+#plot residuals vs predictions
+final_resid_plot <- ggplot(final_resid, aes(y = .resid, x = .pred)) + geom_point() + 
+  labs(title = "Predictions vs Residuals: LASSO", x = "Residuals", y = "Body Temperature Prediction")
+final_resid_plot #view plot
+
+#compare to null model
+metrics_null_train #view null RMSE for train data
+last_lasso_fit %>% collect_metrics() #view RMSE for final model
+```
+
